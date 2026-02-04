@@ -1,0 +1,46 @@
+import os
+from pathlib import Path
+from typing import Optional
+from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import SecretStr
+
+# 1. 动态获取项目根目录
+# 这样可以确保数据库路径等配置始终基于项目根路径，而不是运行命令的当前路径
+BASE_DIR = Path(__file__).resolve().parent.parent
+
+class Settings(BaseSettings):
+    """
+    应用配置类
+    自动读取环境变量和 .env 文件
+    """
+    
+    # --- LLM Provider Config ---
+    # 使用 SecretStr 类型，打印日志时会自动脱敏为 '**********'
+    # Optional 表示该字段允许为空（例如只配置了 OpenAI 而没配置 Anthropic）
+    OPENAI_API_KEY: Optional[SecretStr] = None
+    ANTHROPIC_API_KEY: Optional[SecretStr] = None
+    DEFAULT_LLM_MODEL: str = "gpt-4o"
+
+    # --- Application Config ---
+    # 定义默认值，如果 .env 中没有该变量，则使用默认值
+    ENV: str = "development"
+    DEBUG: bool = True
+    PORT: int = 7879
+    SECRET_KEY: SecretStr = SecretStr("unsafe-default-key-change-me")
+
+    # --- Database Config ---
+    # 结合 BASE_DIR 构造绝对路径
+    CHROMA_DB_PATH: str = str(BASE_DIR / "data" / "chroma")
+    SQLITE_DB_PATH: str = str(BASE_DIR / "data" / "automcp.db")
+
+    # --- Pydantic 配置 ---
+    model_config = SettingsConfigDict(
+        env_file=".env",          # 指定读取根目录下的 .env 文件
+        env_file_encoding="utf-8",
+        case_sensitive=True,      # 区分大小写（推荐 True，因为环境变量通常全大写）
+        extra="ignore"            # 忽略 .env 中存在但类中未定义的字段，防止报错
+    )
+
+# 2. 实例化并导出
+# 实现单例模式，其他模块直接导入这个 settings 对象即可
+settings = Settings()
