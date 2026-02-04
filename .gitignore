@@ -1,0 +1,7 @@
+# 忽略README.md外的所有md文件
+*.md
+!README.md
+
+.trae/
+.env
+.pytest_cache/
