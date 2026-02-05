@@ -37,17 +37,28 @@ class AgentMessage(BaseModel):
 # --- 3. 任务规划模型 (Planner 输出) ---
 class TaskStep(BaseModel):
     """
-    单个执行步骤
-    由 Planner 生成，Executor 执行
+    单个执行步骤 (Sub Task)
+    由 Planner 生成，Classifier 分类，Executor 执行
     """
     id: str = Field(default_factory=lambda: str(uuid.uuid4())[:8])
-    description: str = Field(..., description="该步骤的具体描述")
-    tool_name: Optional[str] = Field(None, description="建议使用的工具名称")
-    tool_args: Optional[Dict[str, Any]] = Field(None, description="建议的工具参数")
+    role: str = Field(..., description="执行该任务的角色，如 coder, planner, reviewer")
+    description: str = Field(..., description="准确精简的任务描述")
+    requirements: List[str] = Field(default_factory=list, description="任务的具体要求，如使用语言、约束条件等")
+    
+    # 分类器输出
+    task_type: Optional[str] = Field(None, description="任务类型: local_mcp, web_mcp, code_to_mcp, llm")
+    
+    # 执行状态
+    tool_name: Optional[str] = Field(None, description="实际使用的工具名称")
+    tool_args: Optional[Dict[str, Any]] = Field(None, description="实际使用的工具参数")
     
     status: TaskStatus = TaskStatus.PENDING
     result: Optional[str] = None     # 执行结果摘要
     error: Optional[str] = None      # 错误信息
+    
+    # 反思控制
+    retry_count: int = Field(0, description="当前重试/反思次数")
+    max_retries: int = Field(3, description="最大允许重试次数")
     
     created_at: datetime = Field(default_factory=datetime.now)
     updated_at: datetime = Field(default_factory=datetime.now)

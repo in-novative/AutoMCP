@@ -1,6 +1,6 @@
 from fastapi import FastAPI, Request, Response
-from mcp.server.sse import SseServerTransport
-from src.core.mcp_server import server  # 导入新的 server 实例
+from mcp.server.mcp_server import SseServerTransport
+from src.server.mcp_server import server  # 导入新的 server 实例
 from config.settings import settings
 
 app = FastAPI(title="AutoMCP", debug=settings.DEBUG)
