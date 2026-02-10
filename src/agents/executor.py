@@ -30,16 +30,15 @@ EXECUTOR_SYSTEM_PROMPT = """
 {requirements}
 """
 
-def get_tools_for_step(step: TaskStep) -> List[Any]:
+async def get_tools_for_step(step: TaskStep) -> List[Any]:
     """
-    根据当前步骤获取可用工具列表
+    根据当前步骤获取可用工具列表 (支持 Local RAG 增强)
     """
-    # TODO: Implement tool retrieval logic based on step.task_type or step.tool_name
-    # Example:
-    # if step.task_type == "local_mcp":
-    #     return get_local_tools()
-    # elif step.task_type == "web_mcp":
-    #     return get_web_tools()
+    # 1. Local MCP: 使用本地 RAG 检索最相关的本地工具
+    # TODO: Implement local RAG retrieval
+    # query = step.description
+    # relevant_tool_names = await rag_service.search_local_tools(query, top_k=5)
+    # return tool_registry.get_tools(relevant_tool_names)
     return []
 
 async def executor_node(state: AgentState):
@@ -64,7 +63,7 @@ async def executor_node(state: AgentState):
     
     # 2. 准备执行环境
     # 获取相关工具
-    tools = get_tools_for_step(current_step)
+    tools = await get_tools_for_step(current_step)
     
     # 初始化 LLM (Executor 通常需要较强的推理能力)
     # TODO: Load model config from settings

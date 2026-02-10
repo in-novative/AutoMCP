@@ -3,6 +3,9 @@ from langchain_openai import ChatOpenAI
 from src.workflow.state import AgentState
 from src.server.models import TaskStatus, AgentMessage
 from config.settings import settings  # 假设已添加重试配置
+import logging
+
+logger = logging.getLogger(__name__)
 
 # 定义反思结果枚举
 class ReflectionAction(str, Enum):
@@ -10,6 +13,7 @@ class ReflectionAction(str, Enum):
     REPLAN_ALL = "replan_all"        # 回退给 Planner
     FAIL_FINAL = "fail_final"        # 彻底放弃
 
+# --- Prompt 定义 ---
 REFLECTION_PROMPT = """
 你是一个代码审计与错误分析专家。
 当前子任务执行失败。请分析错误日志，并给出修复建议。
@@ -30,8 +34,8 @@ async def reflection_node(state: AgentState):
     current_step = plan[idx]
     
     # 获取全局配置的阈值 (也可以从 state 中获取动态配置)
-    max_sub_retries = settings.MAX_SUBTASK_RETRIES
-    max_plan_retries = state.get("plan_retry_count", 0)  # 任务级重试计数
+    max_sub_retries = state.get("max_subtask_retries", settings.MAX_SUBTASK_RETRIES)
+    max_plan_retries = state.get("plan_retry_count", settings.MAX_PLAN_RETRIES)
     
     # --- Level 1: 子任务级反思 ---
     if current_step.retry_count < max_sub_retries:

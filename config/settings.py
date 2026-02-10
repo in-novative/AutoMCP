@@ -33,6 +33,10 @@ class Settings(BaseSettings):
     CHROMA_DB_PATH: str = str(BASE_DIR / "data" / "chroma")
     SQLITE_DB_PATH: str = str(BASE_DIR / "data" / "automcp.db")
 
+    # --- Reflection Config ---
+    MAX_SUBTASK_RETRIES: int = 3   # Level 1 反思重试次数
+    MAX_PLAN_RETRIES: int = 2      # Level 2 任务级重规划次数
+
     # --- Pydantic 配置 ---
     model_config = SettingsConfigDict(
         env_file=".env",          # 指定读取根目录下的 .env 文件

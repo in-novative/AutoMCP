@@ -1,115 +1,96 @@
 from langgraph.graph import StateGraph, END
-from .state import AgentState
+from src.agents.state import AgentState
+
+# --- 导入节点 (Nodes) ---
 from src.agents.planner import planner_node
 from src.agents.classifier import classifier_node
-from src.agents.router import router_node
-from src.agents.executor import executor_node       # 假设已实现
+from src.agents.executor import executor_node
+from src.agents.web_executor import web_executor_node
+from src.agents.code_generator import code_generator_node
+from src.agents.llm_responder import llm_responder_node
 from src.agents.reflection import reflection_node
 
-# --- 1. 定义路由逻辑函数 ---
+# --- 导入路由逻辑 (Edges) ---
+# 确保 src/agents/router.py 中已定义这些函数
+from src.agents.router import (
+    router_node,       # Classifier -> Executors
+    executor_router,   # Executors -> Next/Reflection
+    reflection_router  # Reflection -> Retry/Replan
+)
 
-def executor_router(state: AgentState):
-    """
-    Executor 执行后的路由：
-    - 成功 -> 继续下一个步骤 (Loop back to Classifier or End)
-    - 失败 -> 进入反思 (Reflection)
-    """
-    plan = state["plan"]
-    idx = state["current_step_index"]
-    current_step = plan[idx]
-    
-    if current_step.status == "completed":
-        # 如果是最后一步，结束
-        if idx >= len(plan) - 1:
-            return "__end__"
-        else:
-            # 否则，继续处理下一步
-            # 注意：需要在 executor_node 中将 index + 1
-            return "classifier"
-            
-    elif current_step.status == "failed":
-        return "reflection"
-        
-    return "__end__" # 默认兜底
-
-def reflection_router(state: AgentState):
-    """
-    Reflection 反思后的路由：
-    - retry_subtask -> 回到 Classifier (因为任务描述变了，可能分类也变了)
-    - replan_all -> 回到 Planner
-    - fail_final -> 结束
-    """
-    # 这个 next_action 标记需要在 reflection_node 中设置
-    action = state.get("next_action", "retry_subtask")
-    
-    if action == "replan":
-        return "planner"
-    elif action == "fail":
-        return "__end__"
-    else:
-        return "classifier"
-
-# --- 2. 构建图 ---
-
+# --- 构建状态图 ---
 workflow = StateGraph(AgentState)
 
-# 2.1 添加节点
+# 1. 注册所有节点
+# ------------------------------------------------------------------
 workflow.add_node("planner", planner_node)
 workflow.add_node("classifier", classifier_node)
 
-# 执行层节点
+# 四种执行路径
 workflow.add_node("executor", executor_node)          # Local MCP
-# workflow.add_node("web_executor", web_executor_node) # Web MCP (占位)
-# workflow.add_node("code_generator", code_generator_node) # Code-to-MCP (占位)
-# workflow.add_node("llm_responder", llm_responder_node)   # Pure LLM (占位)
+workflow.add_node("web_executor", web_executor_node)  # Web MCP
+workflow.add_node("code_generator", code_generator_node) # Code-to-MCP
+workflow.add_node("llm_responder", llm_responder_node)   # Pure LLM
 
-# 反思节点
+# 错误处理与反思
 workflow.add_node("reflection", reflection_node)
 
-# 2.2 定义边 (Edges)
 
-# 入口 -> Planner
+# 2. 定义边与流转逻辑
+# ------------------------------------------------------------------
+
+# 2.1 启动阶段
+# 入口 -> 规划器
 workflow.set_entry_point("planner")
 
-# Planner -> Classifier (规划完，开始分类第一步)
+# 规划器 -> 分类器 (开始处理第一个任务)
 workflow.add_edge("planner", "classifier")
 
-# Classifier -> [Executor / Web / Code / LLM] (通过 Router 分发)
+
+# 2.2 分发阶段 (Router)
+# 根据 Classifier 的标签，分发到具体的执行器
 workflow.add_conditional_edges(
     "classifier",
     router_node,
     {
         "executor": "executor",
-        "web_executor": "executor",       # 暂时复用 executor
-        "code_generator": "executor",     # 暂时复用 executor
-        "llm_responder": "executor",      # 暂时复用 executor
-        "__end__": END
+        "web_executor": "web_executor",
+        "code_generator": "code_generator",
+        "llm_responder": "llm_responder",
+        "__end__": END  # 如果没有任务了
     }
 )
 
-# [Executors] -> [Next Step / Reflection] (执行结果判断)
-# 所有执行节点共享相同的后续逻辑
-for node_name in ["executor"]: #, "web_executor", "code_generator", "llm_responder"]:
+
+# 2.3 执行阶段 (Execution Loop)
+# 所有执行器共享相同的后续逻辑：成功则继续，失败则反思
+target_executors = ["executor", "web_executor", "code_generator", "llm_responder"]
+
+for node_name in target_executors:
     workflow.add_conditional_edges(
         node_name,
         executor_router,
         {
-            "classifier": "classifier",  # 成功，去下一步 (再次分类)
-            "reflection": "reflection",  # 失败，去反思
-            "__end__": END
+            "classifier": "classifier",  # 成功: 回到分类器处理下一步
+            "reflection": "reflection",  # 失败: 进入反思
+            "__end__": END               # 完成: 全部任务结束
         }
     )
 
-# Reflection -> [Classifier / Planner / End] (反思结果判断)
+
+# 2.4 反思阶段 (Reflection Loop)
+# 根据反思结果决定是微调还是重构
 workflow.add_conditional_edges(
     "reflection",
     reflection_router,
     {
-        "classifier": "classifier",  # Level 1 重试：重新分类并执行当前步
-        "planner": "planner",        # Level 2 重试：重新规划所有步骤
-        "__end__": END               # 彻底失败
+        "classifier": "classifier",  # Level 1: 原地重试 (Subtask Retry)
+        "planner": "planner",        # Level 2: 全局重规划 (Replan)
+        "__end__": END               # Final: 彻底失败
     }
 )
 
-# 3. 编译
+# 3. 编译图
+# ------------------------------------------------------------------
+# 生成可执行的 Runnable 对象
 graph = workflow.compile()

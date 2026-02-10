@@ -70,6 +70,10 @@ class ExecutionPlan(BaseModel):
     """
     task: str = Field(..., description="用户的原始任务")
     steps: List[TaskStep] = Field(default_factory=list)
+
+    # 反思控制
+    retry_count: int = Field(0, description="当前重试/反思次数")
+    max_retries: int = Field(2, description="最大允许重试次数")
     
     # 计划层面的状态
     status: TaskStatus = TaskStatus.PENDING
