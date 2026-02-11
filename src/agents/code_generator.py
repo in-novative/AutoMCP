@@ -2,13 +2,15 @@ import logging
 import ast
 import sys
 import io
+import json
 from typing import Any, Dict, Optional
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 
-from src.agents.state import AgentState
+from src.workflow.state import AgentState
 from src.server.models import TaskStep, TaskStatus, AgentMessage, TaskCategory
+from config.settings import settings
 
 logger = logging.getLogger(__name__)
 
@@ -113,7 +115,12 @@ async def code_generator_node(state: AgentState):
     
     try:
         # 1. 生成代码
-        llm = ChatOpenAI(model="gpt-4o", temperature=0.1)
+        llm = ChatOpenAI(
+            model=settings.DEFAULT_LLM_MODEL,
+            temperature=0.1,
+            api_key=settings.OPENAI_API_KEY.get_secret_value(),
+            base_url=settings.OPENAI_BASE_URL
+        )
         chain = ChatPromptTemplate.from_template(CODE_GEN_PROMPT) | llm | StrOutputParser()
         
         generated_code = await chain.ainvoke({
@@ -133,8 +140,8 @@ async def code_generator_node(state: AgentState):
         # 3. 更新状态
         current_step.result = execution_result
         current_step.status = TaskStatus.COMPLETED
-        # 保存生成的代码到 tool_args 以便后续查看或 Crystallize
-        current_step.tool_args = {"code": generated_code} 
+        # 保存生成的代码到 tool_args 以便后续查看或 Crystallize (转为JSON字符串)
+        current_step.tool_args = json.dumps({"code": generated_code}) 
         
         return {
             "current_step_index": idx + 1,

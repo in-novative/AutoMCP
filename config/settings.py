@@ -17,12 +17,20 @@ class Settings(BaseSettings):
     # --- LLM Provider Config ---
     # 使用 SecretStr 类型，打印日志时会自动脱敏为 '**********'
     # Optional 表示该字段允许为空（例如只配置了 OpenAI 而没配置 Anthropic）
-    OPENAI_API_KEY: Optional[SecretStr] = None
+    OPENAI_API_KEY: Optional[SecretStr]
+    OPENAI_BASE_URL: str
     ANTHROPIC_API_KEY: Optional[SecretStr] = None
-    DEFAULT_LLM_MODEL: str = "gpt-4o"
+    DEFAULT_LLM_MODEL: str
+
+    # --- Classifier Config (小模型配置，用于本地微调) ---
+    CLASSIFIER_MODEL: str = "qwen2.5:1.5b"           # 分类器使用的模型
+    CLASSIFIER_BASE_URL: str = "http://localhost:11434/v1"  # Ollama 或其他本地服务地址
+    CLASSIFIER_API_KEY: str = "ollama"               # 本地服务占位符
+
+    # --- Embedding Config ---
+    EMBEDDING_MODEL: str = "text-embedding-3-small"  # 嵌入模型
 
     # --- Application Config ---
-    # 定义默认值，如果 .env 中没有该变量，则使用默认值
     ENV: str = "development"
     DEBUG: bool = True
     PORT: int = 7879
@@ -42,7 +50,7 @@ class Settings(BaseSettings):
         env_file=".env",          # 指定读取根目录下的 .env 文件
         env_file_encoding="utf-8",
         case_sensitive=True,      # 区分大小写（推荐 True，因为环境变量通常全大写）
-        extra="ignore"            # 忽略 .env 中存在但类中未定义的字段，防止报错
+        #extra="ignore"            # 忽略 .env 中存在但类中未定义的字段，防止报错
     )
 
 # 2. 实例化并导出

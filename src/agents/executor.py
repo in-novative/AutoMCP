@@ -6,6 +6,7 @@ from langgraph.prebuilt import create_react_agent
 
 from src.workflow.state import AgentState
 from src.server.models import TaskStep, TaskStatus, AgentMessage
+from config.settings import settings
 # TODO: Import your tool registry or manager here
 # from src.tools.registry import get_available_tools 
 
@@ -66,8 +67,12 @@ async def executor_node(state: AgentState):
     tools = await get_tools_for_step(current_step)
     
     # 初始化 LLM (Executor 通常需要较强的推理能力)
-    # TODO: Load model config from settings
-    llm = ChatOpenAI(model="gpt-4o", temperature=0.1)
+    llm = ChatOpenAI(
+        model=settings.DEFAULT_LLM_MODEL,
+        temperature=0.1,
+        api_key=settings.OPENAI_API_KEY.get_secret_value(),
+        base_url=settings.OPENAI_BASE_URL
+    )
     
     # 构造 Prompt
     system_msg = EXECUTOR_SYSTEM_PROMPT.format(

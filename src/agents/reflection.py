@@ -4,6 +4,7 @@ from src.workflow.state import AgentState
 from src.server.models import TaskStatus, AgentMessage
 from config.settings import settings  # 假设已添加重试配置
 import logging
+from enum import Enum
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +41,12 @@ async def reflection_node(state: AgentState):
     # --- Level 1: 子任务级反思 ---
     if current_step.retry_count < max_sub_retries:
         # 1. 调用 LLM 分析错误
-        llm = ChatOpenAI(model="gpt-4o", temperature=0.3)
+        llm = ChatOpenAI(
+            model=settings.DEFAULT_LLM_MODEL,
+            temperature=0.3,
+            api_key=settings.OPENAI_API_KEY.get_secret_value(),
+            base_url=settings.OPENAI_BASE_URL
+        )
         prompt = ChatPromptTemplate.from_template(REFLECTION_PROMPT)
         chain = prompt | llm
         

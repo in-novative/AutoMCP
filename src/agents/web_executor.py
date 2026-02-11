@@ -10,8 +10,9 @@ from langchain_core.messages import HumanMessage
 from langgraph.prebuilt import create_react_agent
 from langchain_core.tools import Tool
 
-from src.agents.state import AgentState
+from src.workflow.state import AgentState
 from src.server.models import TaskStep, TaskStatus, AgentMessage, TaskCategory
+from config.settings import settings
 
 logger = logging.getLogger(__name__)
 
@@ -95,7 +96,12 @@ async def connect_and_execute(server_url: str, task_description: str) -> str:
             return "Error: Remote server has no tools."
             
         # 3.5 使用 ReAct Agent 执行
-        llm = ChatOpenAI(model="gpt-4o", temperature=0)
+        llm = ChatOpenAI(
+            model=settings.DEFAULT_LLM_MODEL,
+            temperature=0,
+            api_key=settings.OPENAI_API_KEY.get_secret_value(),
+            base_url=settings.OPENAI_BASE_URL
+        )
         agent = create_react_agent(llm, langchain_tools)
         
         result = await agent.ainvoke({

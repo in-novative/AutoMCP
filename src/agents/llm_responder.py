@@ -3,8 +3,9 @@ from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 
-from src.agents.state import AgentState
+from src.workflow.state import AgentState
 from src.server.models import TaskStep, TaskStatus, AgentMessage, TaskCategory
+from config.settings import settings
 
 logger = logging.getLogger(__name__)
 
@@ -55,7 +56,12 @@ async def llm_responder_node(state: AgentState):
     try:
         # 2. 调用 LLM
         # 使用智能模型 (GPT-4o) 以获得最佳回复质量
-        llm = ChatOpenAI(model="gpt-4o", temperature=0.7)
+        llm = ChatOpenAI(
+            model=settings.DEFAULT_LLM_MODEL,
+            temperature=0.7,
+            api_key=settings.OPENAI_API_KEY.get_secret_value(),
+            base_url=settings.OPENAI_BASE_URL
+        )
         chain = ChatPromptTemplate.from_template(RESPONDER_PROMPT) | llm | StrOutputParser()
         
         response_text = await chain.ainvoke({

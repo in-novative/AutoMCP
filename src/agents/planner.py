@@ -1,7 +1,8 @@
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_openai import ChatOpenAI
-from src.server.models import TaskStep, ExecutionPlan
+from src.server.models import ExecutionPlan, AgentMessage
 from src.workflow.state import AgentState
+from config.settings import settings
 
 # 1. 定义输出结构 (Pydantic)
 # 我们已经在 models.py 定义了 TaskStep，这里直接作为 LLM 的输出 Schema
@@ -34,10 +35,10 @@ PLANNER_SYSTEM_PROMPT = """
 
 ## 输出示例
 ```json
-{
+{{
   "task": "开发一个简单的待办事项 CLI 应用",
   "steps": [
-    {
+    {{
       "role": "你是一个资深 Python 开发者，专注于 CLI 工具设计。",
       "description": "创建项目结构并实现基础的 CLI 命令处理逻辑",
       "requirements": [
@@ -46,8 +47,8 @@ PLANNER_SYSTEM_PROMPT = """
         "数据存储实现为 data/tasks.json",
         "实现 add, list, done 三个核心命令"
       ]
-    },
-    {
+    }},
+    {{
       "role": "你是一个 QA 工程师，专注于单元测试。",
       "description": "编写并执行 pytest 测试用例以验证命令功能",
       "requirements": [
@@ -56,9 +57,9 @@ PLANNER_SYSTEM_PROMPT = """
         "确保覆盖所有命令的正常和异常路径",
         "测试覆盖率需达到 80% 以上"
       ]
-    }
+    }}
   ]
-}
+}}
 ```
 """
 
@@ -70,7 +71,12 @@ async def planner_node(state: AgentState):
     user_task = messages[-1].content  # 获取用户最后一条指令
     
     # 3. 初始化 LLM 并绑定结构化输出
-    llm = ChatOpenAI(model="gpt-4o", temperature=0)
+    llm = ChatOpenAI(
+        model=settings.DEFAULT_LLM_MODEL,
+        temperature=0,
+        api_key=settings.OPENAI_API_KEY.get_secret_value(), # 显式传入 Key
+        base_url=settings.OPENAI_BASE_URL # 显式传入 Base URL (兼容 Gitee AI)
+    )
     structured_llm = llm.with_structured_output(ExecutionPlan) # 强制返回 ExecutionPlan 对象
     
     # 4. 构造调用链
