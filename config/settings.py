@@ -45,6 +45,11 @@ class Settings(BaseSettings):
     MAX_SUBTASK_RETRIES: int = 3   # Level 1 反思重试次数
     MAX_PLAN_RETRIES: int = 2      # Level 2 任务级重规划次数
 
+    # --- Code2MCP Config ---
+    CODE2MCP_PATH: Optional[str] = None  # Code2MCP 项目路径
+    GITHUB_TOKEN: Optional[SecretStr] = None  # GitHub API Token
+    ENABLE_CODE2MCP: bool = True  # 是否启用 Code2MCP 集成
+
     # --- Pydantic 配置 ---
     model_config = SettingsConfigDict(
         env_file=".env",          # 指定读取根目录下的 .env 文件

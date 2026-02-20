@@ -4,8 +4,6 @@ from chromadb.utils import embedding_functions
 from src.memory.rag_base import BaseRAG
 from config.settings import settings
 
-
-
 class LocalToolRAG(BaseRAG):
     """
     专门管理本地工具 (LangChain Tools) 的索引
@@ -17,14 +15,9 @@ class LocalToolRAG(BaseRAG):
             model_name=settings.EMBEDDING_MODEL,
             api_base=settings.OPENAI_BASE_URL
         )
-        # 删除旧集合（如果存在）以确保维度一致
-        try:
-            self.client.delete_collection("local_tools_v1")
-        except Exception:
-            pass  # 集合不存在时忽略
-
+        # 获取或创建集合（保留已有索引，实现持久化）
         self.collection = self.client.get_or_create_collection(
-            name="local_tools_v1", # 版本化是个好习惯
+            name="local_tools",
             embedding_function=self.embedding_fn
         )
 
@@ -51,4 +44,4 @@ class LocalToolRAG(BaseRAG):
         return results["ids"][0] if results["ids"] else []
 
     def clear(self):
-        self.client.delete_collection("local_tools_v1")
+        self.client.delete_collection("local_tools")

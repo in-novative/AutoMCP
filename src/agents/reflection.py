@@ -64,10 +64,11 @@ async def reflection_node(state: AgentState):
         # 3. 增加计数并重置状态
         current_step.retry_count += 1
         current_step.status = TaskStatus.PENDING # 重置为 pending 以便再次被 Executor 拾取
-        
+
         return {
-            "plan": plan, 
-            "messages": [AgentMessage(role="system", content=f"子任务失败，正在第 {current_step.retry_count} 次重试...")]
+            "plan": plan,
+            "messages": [AgentMessage(role="system", content=f"子任务失败，正在第 {current_step.retry_count} 次重试...")],
+            "next_action": "retry_subtask"  # 关键：通知路由进行重试
         }
     
     # --- Level 2: 任务级反思 ---

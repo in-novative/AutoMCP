@@ -7,40 +7,47 @@ from langgraph.prebuilt import create_react_agent
 from src.workflow.state import AgentState
 from src.server.models import TaskStep, TaskStatus, AgentMessage
 from config.settings import settings
-# TODO: Import your tool registry or manager here
-# from src.tools.registry import get_available_tools 
+from src.memory.rag_local import LocalToolRAG
+from src.tools.registry import tool_registry
 
 # 设置日志
 logger = logging.getLogger(__name__)
 
-# 定义 Executor 的 System Prompt
-EXECUTOR_SYSTEM_PROMPT = """
-你是一个全能执行助手 (Executor)。
-你的任务是利用手中的工具，精确完成用户指定的子任务。
-
-## 执行原则
-1. **专注**: 只完成当前分配的子任务，不要做多余的事。
-2. **工具优先**: 尽量使用工具来获取信息或操作环境。
-3. **如实报告**: 无论成功与否，都要客观返回执行结果。
-4. **角色扮演**: 请扮演以下角色进行执行: {role}
-
-## 当前任务
-{description}
-
-## 约束条件
-{requirements}
-"""
+# 全局 RAG 实例（单例）
+_tool_rag = LocalToolRAG()
 
 async def get_tools_for_step(step: TaskStep) -> List[Any]:
     """
     根据当前步骤获取可用工具列表 (支持 Local RAG 增强)
+    
+    工作流程:
+    1. 使用 RAG 语义检索相关工具名称
+    2. 从工具注册表获取实际工具对象
     """
-    # 1. Local MCP: 使用本地 RAG 检索最相关的本地工具
-    # TODO: Implement local RAG retrieval
-    # query = step.description
-    # relevant_tool_names = await rag_service.search_local_tools(query, top_k=5)
-    # return tool_registry.get_tools(relevant_tool_names)
-    return []
+    try:
+        # 1. 使用 RAG 检索相关工具名称
+        query = step.description
+        relevant_tool_names = await _tool_rag.search(query, top_k=5)
+        
+        if not relevant_tool_names:
+            logger.warning(f"No tools found for query: {query}")
+            return []
+        
+        logger.info(f"RAG found tools: {relevant_tool_names}")
+        
+        # 2. 从注册表获取实际工具对象
+        tools = tool_registry.get_many(relevant_tool_names)
+        
+        if tools:
+            logger.info(f"Loaded {len(tools)} tools from registry: {[t.name for t in tools]}")
+        else:
+            logger.warning(f"Tools found in RAG but not in registry: {relevant_tool_names}")
+        
+        return tools
+        
+    except Exception as e:
+        logger.error(f"Error retrieving tools: {e}")
+        return []
 
 async def executor_node(state: AgentState):
     """
@@ -73,28 +80,41 @@ async def executor_node(state: AgentState):
         api_key=settings.OPENAI_API_KEY.get_secret_value(),
         base_url=settings.OPENAI_BASE_URL
     )
-    
-    # 构造 Prompt
-    system_msg = EXECUTOR_SYSTEM_PROMPT.format(
-        role=current_step.role,
-        description=current_step.description,
-        requirements="\n- ".join(current_step.requirements)
-    )
-    
+
     # 3. 创建并运行 ReAct Agent
     # 使用 langgraph.prebuilt 快速构建一个 ReAct 循环
     # 如果没有工具，退化为普通对话
     if not tools:
         logger.warning(f"No tools available for step {idx}, falling back to pure LLM.")
-    
-    agent_executor = create_react_agent(llm, tools, state_modifier=system_msg)
-    
+
+    # 构造 system message（包含角色、任务、约束信息）
+    requirements_str = "\n- ".join(current_step.requirements) if current_step.requirements else "无"
+    system_msg_content = f"""你是一个全能执行助手 (Executor)。
+你的任务是利用手中的工具，精确完成用户指定的子任务。
+
+## 执行原则
+1. **专注**: 只完成当前分配的子任务，不要做多余的事。
+2. **工具优先**: 尽量使用工具来获取信息或操作环境。
+3. **如实报告**: 无论成功与否，都要客观返回执行结果。
+4. **角色扮演**: 请扮演以下角色进行执行: {current_step.role}
+
+## 当前任务
+{current_step.description}
+
+## 约束条件
+- {requirements_str}
+"""
+
+    # 创建 ReAct Agent（不使用 modifier，直接传入完整消息）
+    agent_executor = create_react_agent(llm, tools)
+
     try:
-        # 执行推理
-        # 输入仅包含当前任务描述，避免上下文过长干扰
-        # TODO: Consider adding relevant context from previous steps if needed
+        # 执行推理，直接传入 system message + human message
         result = await agent_executor.ainvoke({
-            "messages": [HumanMessage(content=f"请执行此任务: {current_step.description}")]
+            "messages": [
+                SystemMessage(content=system_msg_content),
+                HumanMessage(content=f"请执行此任务: {current_step.description}")
+            ]
         })
         
         # 4. 处理结果

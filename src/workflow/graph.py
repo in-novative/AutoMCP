@@ -1,6 +1,8 @@
 from langgraph.graph import StateGraph, END
 from src.workflow.state import AgentState
 from src.server.models import TaskCategory
+from src.workflow.config import CodeToMCPMode, DEFAULT_CODE_TO_MCP_MODE
+from config.settings import settings
 
 # --- 导入节点 (Nodes) ---
 from src.agents.planner import planner_node
@@ -8,6 +10,7 @@ from src.agents.classifier import classifier_node
 from src.agents.executor import executor_node
 from src.agents.web_executor import web_executor_node
 from src.agents.code_generator import code_generator_node
+from src.agents.code2mcp_executor import code2mcp_executor_node
 from src.agents.llm_responder import llm_responder_node
 from src.agents.reflection import reflection_node
 
@@ -19,6 +22,22 @@ from src.agents.router import (
     reflection_router  # Reflection -> Retry/Replan
 )
 
+
+def get_code_to_mcp_node() -> str:
+    """根据配置返回应该使用的 Code-to-MCP 节点"""
+    if not settings.ENABLE_CODE2MCP:
+        return "code_generator"
+    
+    mode = DEFAULT_CODE_TO_MCP_MODE
+    
+    if mode == CodeToMCPMode.CODE2MCP:
+        return "code2mcp_executor"
+    elif mode == CodeToMCPMode.INTERNAL:
+        return "code_generator"
+    else:
+        return "code2mcp_executor"
+
+
 # --- 构建状态图 ---
 workflow = StateGraph(AgentState)
 
@@ -27,10 +46,11 @@ workflow = StateGraph(AgentState)
 workflow.add_node("planner", planner_node)
 workflow.add_node("classifier", classifier_node)
 
-# 四种执行路径
+# 多种执行路径
 workflow.add_node("executor", executor_node)          # Local MCP
 workflow.add_node("web_executor", web_executor_node)  # Web MCP
-workflow.add_node("code_generator", code_generator_node) # Code-to-MCP
+workflow.add_node("code_generator", code_generator_node) # 代码生成（原有）
+workflow.add_node("code2mcp_executor", code2mcp_executor_node) # Code2MCP 仓库转换（新增）
 workflow.add_node("llm_responder", llm_responder_node)   # Pure LLM
 
 # 错误处理与反思
@@ -50,13 +70,25 @@ workflow.add_edge("planner", "classifier")
 
 # 2.2 分发阶段 (Router)
 # 根据 Classifier 的标签，分发到具体的执行器
+def dynamic_router_node(state: AgentState):
+    """动态路由函数，根据配置选择正确的 Code-to-MCP 节点"""
+    result = router_node(state)
+    
+    # 如果是 code_generator，根据配置替换
+    if result == "code_generator":
+        return get_code_to_mcp_node()
+    
+    return result
+
+
 workflow.add_conditional_edges(
     "classifier",
-    router_node,
+    dynamic_router_node,
     {
         "executor": "executor",
         "web_executor": "web_executor",
         "code_generator": "code_generator",
+        "code2mcp_executor": "code2mcp_executor",
         "llm_responder": "llm_responder",
         "__end__": END  # 如果没有任务了
     }
@@ -65,7 +97,7 @@ workflow.add_conditional_edges(
 
 # 2.3 执行阶段 (Execution Loop)
 # 所有执行器共享相同的后续逻辑：成功则继续，失败则反思
-target_executors = ["executor", "web_executor", "code_generator", "llm_responder"]
+target_executors = ["executor", "web_executor", "code_generator", "code2mcp_executor", "llm_responder"]
 
 for node_name in target_executors:
     workflow.add_conditional_edges(
